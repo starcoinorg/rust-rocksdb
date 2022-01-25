@@ -136,8 +136,10 @@ fn build_rocksdb() {
 
     if target.contains("x86_64") && cfg!(feature = "sse") {
         // see https://github.com/facebook/rocksdb/blob/v6.20.3/CMakeLists.txt#L266
-        config.define("PORTABLE", "ON");
-        config.define("FORCE_SSE42", "ON");
+       // config.define("PORTABLE", "ON");
+      //  config.define("FORCE_SSE42", "ON");
+        // see https://github.com/facebook/rocksdb/blob/v6.20.3/INSTALL.md
+        println!("cargo:rustc-env=USE_SSE=1");
     }
 
     if target.contains("aarch64") {
