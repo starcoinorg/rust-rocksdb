@@ -158,7 +158,7 @@ fn cmake_build_rocksdb() {
         .build_target("rocksdb")
         .very_verbose(true)
         .build();
-    let build_dir = format!("{}", dst.display());
+    let build_dir = format!("{}/build", dst.display());
     if cfg!(target_os = "windows") {
         let profile = match &*env::var("PROFILE").unwrap_or_else(|_| "debug".to_owned()) {
             "bench" | "release" => "Release",
