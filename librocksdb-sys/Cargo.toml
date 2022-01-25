@@ -20,9 +20,10 @@ sse = []
 [dependencies]
 libc = "0.2"
 tikv-jemalloc-sys = { version = "0.4", features = ["unprefixed_malloc_on_supported_platforms"], optional = true }
-zstd-sys = { version = "1.6", default-features = false, optional = true }
+bzip2-sys = { version = "0.1.11+1.0.8", features = ["static"] }
+zstd-sys = "1.4.19+zstd.1.4.8"
 libz-sys = { version = "1.1", features = ["static"] }
-bzip2-sys = { version = "0.1", features = ["static"] }
+
 lz4-sys = "1.9"
 
 [dev-dependencies]
