@@ -49,6 +49,7 @@ fn bindgen_rocksdb() {
         .expect("unable to write rocksdb bindings");
 }
 
+#[allow(dead_code)]
 fn build_rocksdb() {
     let target = env::var("TARGET").unwrap();
 
@@ -108,7 +109,6 @@ fn build_rocksdb() {
         .filter(|&file| file != "util/build_version.cc")
         .collect::<Vec<&'static str>>();
 
-    /*
     if target.contains("x86_64") {
         // This is needed to enable hardware CRC32C. Technically, SSE 4.2 is
         // only available since Intel Nehalem (about 2010) and AMD Bulldozer
@@ -132,17 +132,18 @@ fn build_rocksdb() {
                 config.flag_if_supported("-mpclmul");
             }
         }
-    } */
-
-    if target.contains("x86_64") && cfg!(feature = "sse") {
-        // see https://github.com/facebook/rocksdb/blob/v6.20.3/INSTALL.md
-        // USE_SSE=1 can't work
-        env::set_var("USE_SSE", 1);
-        // println!("cargo:rustc-env=USE_SSE=1");
-        // see https://github.com/facebook/rocksdb/blob/v6.20.3/CMakeLists.txt#L266
-        //config.define("PORTABLE", "ON");
-        //config.define("FORCE_SSE42", "ON");
     }
+
+    // RocksDB cmake script expect libz.a being under ${DEP_Z_ROOT}/lib, but libz-sys crate put it
+    // under ${DEP_Z_ROOT}/build. Append the path to CMAKE_PREFIX_PATH to get around it.
+    env::set_var("CMAKE_PREFIX_PATH", {
+        let zlib_path = format!("{}", env::var("DEP_Z_ROOT").unwrap());
+        if let Ok(prefix_path) = env::var("CMAKE_PREFIX_PATH") {
+            format!("{};{}", prefix_path, zlib_path)
+        } else {
+            zlib_path
+        }
+    });
 
     if target.contains("aarch64") {
         lib_sources.push("util/crc32c_arm64.cc")
@@ -232,6 +233,7 @@ fn build_rocksdb() {
     config.compile("librocksdb.a");
 }
 
+#[allow(dead_code)]
 fn build_snappy() {
     let target = env::var("TARGET").unwrap();
     let endianness = env::var("CARGO_CFG_TARGET_ENDIAN").unwrap();
@@ -261,6 +263,7 @@ fn build_snappy() {
     config.compile("libsnappy.a");
 }
 
+#[allow(dead_code)]
 fn build_lz4() {
     let mut compiler = cc::Build::new();
 
@@ -316,7 +319,7 @@ fn main() {
     if !try_to_find_and_link_lib("ROCKSDB") {
         println!("cargo:rerun-if-changed=rocksdb/");
         fail_on_empty_directory("rocksdb");
-        build_rocksdb();
+        cmake_build_rocksdb();
     } else {
         let target = env::var("TARGET").unwrap();
         // according to https://github.com/alexcrichton/cc-rs/blob/master/src/lib.rs#L2189
@@ -326,17 +329,6 @@ fn main() {
             println!("cargo:rustc-link-lib=dylib=stdc++");
         }
     }
-    if cfg!(feature = "snappy") && !try_to_find_and_link_lib("SNAPPY") {
-        println!("cargo:rerun-if-changed=snappy/");
-        fail_on_empty_directory("snappy");
-        build_snappy();
-    }
-    if cfg!(feature = "lz4") && !try_to_find_and_link_lib("LZ4") {
-        println!("cargo:rerun-if-changed=lz4/");
-        fail_on_empty_directory("lz4");
-        build_lz4();
-    }
-
     // Allow dependent crates to locate the sources and output directory of
     // this crate. Notably, this allows a dependent crate to locate the RocksDB
     // sources and built archive artifacts provided by this crate.
@@ -345,4 +337,181 @@ fn main() {
         env::var("CARGO_MANIFEST_DIR").unwrap()
     );
     println!("cargo:out_dir={}", env::var("OUT_DIR").unwrap());
+}
+
+
+fn cmake_build_rocksdb()  {
+    let target = env::var("TARGET").unwrap();
+
+    let mut cmake_cfg = cmake::Config::new("rocksdb");
+
+
+    if cfg!(feature = "snappy") {
+        cmake_cfg.register_dep("SNAPPY").define("WITH_SNAPPY", "ON");
+        println!("cargo:rustc-link-lib=static=snappy");
+    }
+
+    if cfg!(feature = "lz4") {
+      cmake_cfg.register_dep("LZ4").define("WITH_LZ4", "ON");
+        println!("cargo:rustc-link-lib=static=lz4");
+    }
+
+    if cfg!(feature = "zstd") {
+      cmake_cfg.register_dep("ZSTD").define("ZSTD", "ON");
+        println!("cargo:rustc-link-lib=static=zstd");
+    }
+
+    if cfg!(feature = "zlib") {
+        cmake_cfg.register_dep("ZLIB").define("WITH_ZLIB", "ON");
+        println!("cargo:rustc-link-lib=static=z");
+    }
+
+    if cfg!(feature = "bzip2") {
+        cmake_cfg.register_dep("BZIP2").define("WITH_BZIP2", "ON");
+        println!("cargo:rustc-link-lib=static=bz2")
+    }
+
+    if cfg!(feature = "rtti") {
+        cmake_cfg.define("USE_RTTI", "1");
+    }
+
+    let dst = cmake_cfg.define("WITH_TESTS", "OFF")
+        .define("WITH_TOOLS", "OFF").build_target("rocksdb").very_verbose(true).build();
+    let build_dir = format!("{}/build", dst.display());
+    let mut config = cc::Build::new();
+    config.include("rocksdb/include/");
+    config.include("rocksdb/");
+    config.include("rocksdb/third-party/gtest-1.8.1/fused-src/");
+    if cfg!(target_os = "windows") {
+        let profile = match &*env::var("PROFILE").unwrap_or_else(|_| "debug".to_owned()) {
+            "bench" | "release" => "Release",
+            _ => "Debug",
+        };
+        println!("cargo:rustc-link-search=native={}/{}", build_dir, profile);
+        config.define("OS_WIN", None);
+    } else {
+        println!("cargo:rustc-link-search=native={}", build_dir);
+        config.define("ROCKSDB_PLATFORM_POSIX", None);
+    }
+
+    let mut lib_sources = include_str!("rocksdb_lib_sources.txt")
+        .trim()
+        .split('\n')
+        .map(str::trim)
+        .collect::<Vec<&'static str>>();
+
+    // We have a pregenerated a version of build_version.cc in the local directory
+    lib_sources = lib_sources
+        .iter()
+        .cloned()
+        .filter(|&file| file != "util/build_version.cc")
+        .collect::<Vec<&'static str>>();
+
+    if target.contains("x86_64") && cfg!(feature = "sse") {
+        // see https://github.com/facebook/rocksdb/blob/v6.20.3/INSTALL.md
+        // USE_SSE=1 can't work
+        // println!("cargo:rustc-env=USE_SSE=1");
+        // see https://github.com/facebook/rocksdb/blob/v6.20.3/CMakeLists.txt#L266
+        cmake_cfg.define("PORTABLE", "ON");
+        cmake_cfg.define("FORCE_SSE42", "ON");
+    }
+
+    // RocksDB cmake script expect libz.a being under ${DEP_Z_ROOT}/lib, but libz-sys crate put it
+    // under ${DEP_Z_ROOT}/build. Append the path to CMAKE_PREFIX_PATH to get around it.
+    env::set_var("CMAKE_PREFIX_PATH", {
+        let zlib_path = format!("{}", env::var("DEP_Z_ROOT").unwrap());
+        if let Ok(prefix_path) = env::var("CMAKE_PREFIX_PATH") {
+            format!("{};{}", prefix_path, zlib_path)
+        } else {
+            zlib_path
+        }
+    });
+
+    if target.contains("aarch64") {
+        lib_sources.push("util/crc32c_arm64.cc")
+    }
+
+    if target.contains("darwin") {
+        config.define("OS_MACOSX", None);
+        config.define("ROCKSDB_PLATFORM_POSIX", None);
+        config.define("ROCKSDB_LIB_IO_POSIX", None);
+    } else if target.contains("android") {
+        config.define("OS_ANDROID", None);
+        config.define("ROCKSDB_PLATFORM_POSIX", None);
+        config.define("ROCKSDB_LIB_IO_POSIX", None);
+    } else if target.contains("linux") {
+        config.define("OS_LINUX", None);
+        config.define("ROCKSDB_PLATFORM_POSIX", None);
+        config.define("ROCKSDB_LIB_IO_POSIX", None);
+    } else if target.contains("freebsd") {
+        config.define("OS_FREEBSD", None);
+        config.define("ROCKSDB_PLATFORM_POSIX", None);
+        config.define("ROCKSDB_LIB_IO_POSIX", None);
+    } else if target.contains("windows") {
+        link("rpcrt4", false);
+        link("shlwapi", false);
+        config.define("DWIN32", None);
+        config.define("OS_WIN", None);
+        config.define("_MBCS", None);
+        config.define("WIN64", None);
+        config.define("NOMINMAX", None);
+        config.define("WITH_WINDOWS_UTF8_FILENAMES", "ON");
+
+        if &target == "x86_64-pc-windows-gnu" {
+            // Tell MinGW to create localtime_r wrapper of localtime_s function.
+            config.define("_POSIX_C_SOURCE", Some("1"));
+            // Tell MinGW to use at least Windows Vista headers instead of the ones of Windows XP.
+            // (This is minimum supported version of rocksdb)
+            config.define("_WIN32_WINNT", Some("_WIN32_WINNT_VISTA"));
+        }
+
+        // Remove POSIX-specific sources
+        lib_sources = lib_sources
+            .iter()
+            .cloned()
+            .filter(|file| {
+                !matches!(
+                    *file,
+                    "port/port_posix.cc"
+                        | "env/env_posix.cc"
+                        | "env/fs_posix.cc"
+                        | "env/io_posix.cc"
+                )
+            })
+            .collect::<Vec<&'static str>>();
+
+        // Add Windows-specific sources
+        lib_sources.push("port/win/port_win.cc");
+        lib_sources.push("port/win/env_win.cc");
+        lib_sources.push("port/win/env_default.cc");
+        lib_sources.push("port/win/win_logger.cc");
+        lib_sources.push("port/win/io_win.cc");
+        lib_sources.push("port/win/win_thread.cc");
+    }
+
+    config.define("ROCKSDB_SUPPORT_THREAD_LOCAL", None);
+
+    if cfg!(feature = "jemalloc") {
+        cmake_cfg.register_dep("JEMALLOC").define("WITH_JEMALLOC", "ON");
+        println!("cargo:rustc-link-lib=static=jemalloc");
+    }
+
+    if target.contains("msvc") {
+        config.flag("-EHsc");
+    } else {
+        config.flag(&cxx_standard());
+        // this was breaking the build on travis due to
+        // > 4mb of warnings emitted.
+        config.flag("-Wno-unused-parameter");
+    }
+
+    for file in lib_sources {
+        let file = "rocksdb/".to_string() + file;
+        config.file(&file);
+    }
+
+    config.file("build_version.cc");
+
+    config.cpp(true);
+    config.compile("librocksdb.a");
 }
