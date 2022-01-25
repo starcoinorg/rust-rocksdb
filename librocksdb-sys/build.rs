@@ -115,7 +115,6 @@ fn cmake_build_rocksdb() {
         // USE_SSE=1 can't work
         // println!("cargo:rustc-env=USE_SSE=1");
         // see https://github.com/facebook/rocksdb/blob/v6.20.3/CMakeLists.txt#L266
-        println!("cargo:ysg");
         cmake_cfg.define("PORTABLE", "ON");
         cmake_cfg.define("FORCE_SSE42", "ON");
     }
