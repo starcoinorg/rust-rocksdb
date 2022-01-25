@@ -102,7 +102,7 @@ fn main() {
         "cargo:cargo_manifest_dir={}",
         env::var("CARGO_MANIFEST_DIR").unwrap()
     );
-    println!("cargo:out_dir={}", env::var("OUT_DIR").unwrap());
+    println!("cargo:out_dir={}/build", env::var("OUT_DIR").unwrap());
 }
 
 fn cmake_build_rocksdb() {
