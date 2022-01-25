@@ -120,25 +120,16 @@ fn cmake_build_rocksdb() {
         cmake_cfg.define("FORCE_SSE42", "ON");
     }
 
-    if cfg!(feature = "lz4") {
-        cmake_cfg.register_dep("LZ4").define("WITH_LZ4", "ON");
-        println!("cargo:rustc-link-lib=static=lz4");
-    }
-
-    if cfg!(feature = "zstd") {
-        cmake_cfg.register_dep("ZSTD").define("ZSTD", "ON");
-        println!("cargo:rustc-link-lib=static=zstd");
-    }
-
-    if cfg!(feature = "zlib") {
-        cmake_cfg.register_dep("ZLIB").define("WITH_ZLIB", "ON");
-        println!("cargo:rustc-link-lib=static=z");
-    }
-
-    if cfg!(feature = "bzip2") {
-        cmake_cfg.register_dep("BZIP2").define("WITH_BZIP2", "ON");
-        println!("cargo:rustc-link-lib=static=bz2")
-    }
+    // RocksDB cmake script expect libz.a being under ${DEP_Z_ROOT}/lib, but libz-sys crate put it
+    // under ${DEP_Z_ROOT}/build. Append the path to CMAKE_PREFIX_PATH to get around it.
+    env::set_var("CMAKE_PREFIX_PATH", {
+        let zlib_path = format!("{}", env::var("DEP_Z_ROOT").unwrap());
+        if let Ok(prefix_path) = env::var("CMAKE_PREFIX_PATH") {
+            format!("{};{}", prefix_path, zlib_path)
+        } else {
+            zlib_path
+        }
+    });
 
     if cfg!(feature = "rtti") {
         cmake_cfg.define("USE_RTTI", "1");
@@ -152,6 +143,16 @@ fn cmake_build_rocksdb() {
     }
 
     let dst = cmake_cfg
+        .define("WITH_GFLAGS", "OFF")
+        .register_dep("Z")
+        .define("WITH_ZLIB", "ON")
+        .register_dep("BZIP2")
+        .define("WITH_BZ2", "ON")
+        .register_dep("LZ4")
+        .define("WITH_LZ4", "ON")
+        .register_dep("ZSTD")
+        .define("WITH_ZSTD", "ON")
+        .register_dep("SNAPPY")
         .define("WITH_TESTS", "OFF")
         .define("WITH_TOOLS", "OFF")
         .build_target("rocksdb")
@@ -168,14 +169,10 @@ fn cmake_build_rocksdb() {
         println!("cargo:rustc-link-search=native={}", build_dir);
     }
 
-    // RocksDB cmake script expect libz.a being under ${DEP_Z_ROOT}/lib, but libz-sys crate put it
-    // under ${DEP_Z_ROOT}/build. Append the path to CMAKE_PREFIX_PATH to get around it.
-    env::set_var("CMAKE_PREFIX_PATH", {
-        let zlib_path = format!("{}", env::var("DEP_Z_ROOT").unwrap());
-        if let Ok(prefix_path) = env::var("CMAKE_PREFIX_PATH") {
-            format!("{};{}", prefix_path, zlib_path)
-        } else {
-            zlib_path
-        }
-    });
+    println!("cargo:rustc-link-lib=static=rocksdb");
+    println!("cargo:rustc-link-lib=static=z");
+    println!("cargo:rustc-link-lib=static=bz2");
+    println!("cargo:rustc-link-lib=static=lz4");
+    println!("cargo:rustc-link-lib=static=zstd");
+    println!("cargo:rustc-link-lib=static=snappy");
 }
