@@ -164,14 +164,14 @@ fn cmake_build_rocksdb() -> cc::Build {
 
     let dst = cmake_cfg
         .define("WITH_GFLAGS", "OFF")
-        .register_dep("Z")
-        .define("WITH_ZLIB", "ON")
-        .register_dep("BZIP2")
-        .define("WITH_BZ2", "ON")
+       // .register_dep("Z")
+        //.define("WITH_ZLIB", "ON")
+        //.register_dep("BZIP2")
+        //.define("WITH_BZ2", "ON")
         .register_dep("LZ4")
         .define("WITH_LZ4", "ON")
-        .register_dep("ZSTD")
-        .define("WITH_ZSTD", "ON")
+        //.register_dep("ZSTD")
+        //.define("WITH_ZSTD", "ON")
         .register_dep("SNAPPY")
         .define("WITH_SNAPPY", "ON")
         .define("WITH_TESTS", "OFF")
@@ -192,10 +192,10 @@ fn cmake_build_rocksdb() -> cc::Build {
     }
 
     println!("cargo:rustc-link-lib=static=rocksdb");
-    println!("cargo:rustc-link-lib=static=z");
-    println!("cargo:rustc-link-lib=static=bz2");
+    //println!("cargo:rustc-link-lib=static=z");
+    //println!("cargo:rustc-link-lib=static=bz2");
     println!("cargo:rustc-link-lib=static=lz4");
-    println!("cargo:rustc-link-lib=static=zstd");
+    //println!("cargo:rustc-link-lib=static=zstd");
     println!("cargo:rustc-link-lib=static=snappy");
 
     build
