@@ -176,6 +176,7 @@ fn cmake_build_rocksdb() -> cc::Build {
         .register_dep("ZSTD")
         .define("WITH_ZSTD", "ON")
         .register_dep("SNAPPY")
+        .define("WITH_SNAPPY", "ON")
         .define("WITH_TESTS", "OFF")
         .define("WITH_TOOLS", "OFF")
         .build_target("rocksdb")
