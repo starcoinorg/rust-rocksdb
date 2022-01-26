@@ -127,7 +127,11 @@ fn main() {
     build.flag("-fno-rtti");
 
     link_cpp(&mut build);
-    println!("cargo:rustc-link-lib=c++");
+    if cfg!(target_os = "macos") {
+        println!("cargo:rustc-link-lib=c++");
+    } else {
+        println!("cargo:rustc-link-lib=stdc++");
+    }
 }
 
 fn cmake_build_rocksdb() -> cc::Build {
