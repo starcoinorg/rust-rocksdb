@@ -1,6 +1,6 @@
-use std::env;
 use std::fs;
 use std::path::PathBuf;
+use std::{env, str};
 
 #[allow(dead_code)]
 fn link(name: &str, bundled: bool) {
@@ -16,6 +16,7 @@ fn link(name: &str, bundled: bool) {
     }
 }
 
+#[allow(dead_code)]
 fn fail_on_empty_directory(name: &str) {
     if fs::read_dir(name).unwrap().count() == 0 {
         println!(
@@ -50,6 +51,7 @@ fn bindgen_rocksdb() {
         .expect("unable to write rocksdb bindings");
 }
 
+#[allow(dead_code)]
 fn try_to_find_and_link_lib(lib_name: &str) -> bool {
     if let Ok(v) = env::var(&format!("{}_COMPILE", lib_name)) {
         if v.to_lowercase() == "true" || v == "1" {
@@ -78,34 +80,56 @@ fn cxx_standard() -> String {
         }
     })
 }
-
-fn main() {
-    bindgen_rocksdb();
-
-    if !try_to_find_and_link_lib("ROCKSDB") {
-        println!("cargo:rerun-if-changed=rocksdb/");
-        fail_on_empty_directory("rocksdb");
-        cmake_build_rocksdb();
+fn link_cpp(build: &mut cc::Build) {
+    let tool = build.get_compiler();
+    let stdlib = if tool.is_like_gnu() {
+        "libstdc++.a"
+    } else if tool.is_like_clang() {
+        "libc++.a"
     } else {
-        let target = env::var("TARGET").unwrap();
-        // according to https://github.com/alexcrichton/cc-rs/blob/master/src/lib.rs#L2189
-        if target.contains("apple") || target.contains("freebsd") || target.contains("openbsd") {
-            println!("cargo:rustc-link-lib=dylib=c++");
-        } else if target.contains("linux") {
-            println!("cargo:rustc-link-lib=dylib=stdc++");
-        }
+        // Don't link to c++ statically on windows.
+        return;
+    };
+    let output = tool
+        .to_command()
+        .arg("--print-file-name")
+        .arg(stdlib)
+        .output()
+        .unwrap();
+    if !output.status.success() || output.stdout.is_empty() {
+        // fallback to dynamically
+        return;
     }
-    // Allow dependent crates to locate the sources and output directory of
-    // this crate. Notably, this allows a dependent crate to locate the RocksDB
-    // sources and built archive artifacts provided by this crate.
+    let path = match str::from_utf8(&output.stdout) {
+        Ok(path) => PathBuf::from(path),
+        Err(_) => return,
+    };
+    if !path.is_absolute() {
+        return;
+    }
+    // remove lib prefix and .a postfix.
+    let libname = &stdlib[3..stdlib.len() - 2];
+    // optional static linking
+    if cfg!(feature = "static_libcpp") {
+        println!("cargo:rustc-link-lib=static={}", &libname);
+    } else {
+        println!("cargo:rustc-link-lib=dylib={}", &libname);
+    }
     println!(
-        "cargo:cargo_manifest_dir={}",
-        env::var("CARGO_MANIFEST_DIR").unwrap()
+        "cargo:rustc-link-search=native={}",
+        path.parent().unwrap().display()
     );
-    println!("cargo:out_dir={}/build", env::var("OUT_DIR").unwrap());
+    build.cpp_link_stdlib(None);
 }
 
-fn cmake_build_rocksdb() {
+fn main() {
+    println!("cargo:rerun-if-changed=rocksdb/");
+    let mut build = cmake_build_rocksdb();
+    bindgen_rocksdb();
+    link_cpp(&mut build);
+}
+
+fn cmake_build_rocksdb() -> cc::Build {
     let target = env::var("TARGET").unwrap();
 
     let mut cmake_cfg = cmake::Config::new("rocksdb");
@@ -158,6 +182,7 @@ fn cmake_build_rocksdb() {
         .very_verbose(true)
         .build();
     let build_dir = format!("{}/build", dst.display());
+    let mut build = cc::Build::new();
     if cfg!(target_os = "windows") {
         let profile = match &*env::var("PROFILE").unwrap_or_else(|_| "debug".to_owned()) {
             "bench" | "release" => "Release",
@@ -166,6 +191,7 @@ fn cmake_build_rocksdb() {
         println!("cargo:rustc-link-search=native={}/{}", build_dir, profile);
     } else {
         println!("cargo:rustc-link-search=native={}", build_dir);
+        build.define("ROCKSDB_PLATFORM_POSIX", None);
     }
 
     println!("cargo:rustc-link-lib=static=rocksdb");
@@ -174,4 +200,6 @@ fn cmake_build_rocksdb() {
     println!("cargo:rustc-link-lib=static=lz4");
     println!("cargo:rustc-link-lib=static=zstd");
     println!("cargo:rustc-link-lib=static=snappy");
+
+    build
 }
