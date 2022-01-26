@@ -97,6 +97,7 @@ fn link_cpp(build: &mut cc::Build) {
         .output()
         .unwrap();
     if !output.status.success() || output.stdout.is_empty() {
+        println!("fail status");
         // fallback to dynamically
         return;
     }
@@ -105,6 +106,7 @@ fn link_cpp(build: &mut cc::Build) {
         Err(_) => return,
     };
     if !path.is_absolute() {
+        println!("fail path");
         return;
     }
     // remove lib prefix and .a postfix.
