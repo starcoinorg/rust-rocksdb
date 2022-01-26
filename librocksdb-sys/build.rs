@@ -97,7 +97,6 @@ fn link_cpp(build: &mut cc::Build) {
         .output()
         .unwrap();
     if !output.status.success() || output.stdout.is_empty() {
-        println!("fail status");
         // fallback to dynamically
         return;
     }
@@ -106,7 +105,6 @@ fn link_cpp(build: &mut cc::Build) {
         Err(_) => return,
     };
     if !path.is_absolute() {
-        println!("fail path");
         return;
     }
     // remove lib prefix and .a postfix.
@@ -129,6 +127,7 @@ fn main() {
     build.flag("-fno-rtti");
 
     link_cpp(&mut build);
+    println!("cargo:rustc-link-lib=c++");
 }
 
 fn cmake_build_rocksdb() -> cc::Build {
@@ -190,7 +189,6 @@ fn cmake_build_rocksdb() -> cc::Build {
         println!("cargo:rustc-link-search=native={}/{}", build_dir, profile);
     } else {
         println!("cargo:rustc-link-search=native={}", build_dir);
-        build.define("ROCKSDB_PLATFORM_POSIX", None);
     }
 
     println!("cargo:rustc-link-lib=static=rocksdb");
