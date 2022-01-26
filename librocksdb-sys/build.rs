@@ -133,6 +133,7 @@ fn cmake_build_rocksdb() -> cc::Build {
     let target = env::var("TARGET").unwrap();
 
     let mut cmake_cfg = cmake::Config::new("rocksdb");
+    cmake_cfg.cxxflag("-std=c++11");
 
     if target.contains("x86_64") && cfg!(feature = "sse") {
         // see https://github.com/facebook/rocksdb/blob/v6.20.3/INSTALL.md
