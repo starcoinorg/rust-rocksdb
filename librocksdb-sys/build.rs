@@ -109,12 +109,8 @@ fn link_cpp(build: &mut cc::Build) {
     }
     // remove lib prefix and .a postfix.
     let libname = &stdlib[3..stdlib.len() - 2];
-    // optional static linking
-    if cfg!(feature = "static_libcpp") {
-        println!("cargo:rustc-link-lib=static={}", &libname);
-    } else {
-        println!("cargo:rustc-link-lib=dylib={}", &libname);
-    }
+    // static linking
+    println!("cargo:rustc-link-lib=static={}", &libname);
     println!(
         "cargo:rustc-link-search=native={}",
         path.parent().unwrap().display()
@@ -126,6 +122,10 @@ fn main() {
     println!("cargo:rerun-if-changed=rocksdb/");
     let mut build = cmake_build_rocksdb();
     bindgen_rocksdb();
+    build.cpp(true);
+    build.flag("-std=c++11");
+    build.flag("-fno-rtti");
+
     link_cpp(&mut build);
 }
 
@@ -133,7 +133,6 @@ fn cmake_build_rocksdb() -> cc::Build {
     let target = env::var("TARGET").unwrap();
 
     let mut cmake_cfg = cmake::Config::new("rocksdb");
-    cmake_cfg.cxxflag("-std=c++11");
 
     if target.contains("x86_64") && cfg!(feature = "sse") {
         // see https://github.com/facebook/rocksdb/blob/v6.20.3/INSTALL.md
@@ -154,10 +153,6 @@ fn cmake_build_rocksdb() -> cc::Build {
             zlib_path
         }
     });
-
-    if cfg!(feature = "rtti") {
-        cmake_cfg.define("USE_RTTI", "1");
-    }
 
     if cfg!(feature = "jemalloc") {
         cmake_cfg
